@@ -30,7 +30,7 @@ twitter_username: duynhanf
 github_username:  duynhanf
 
 # Build settings
-theme: jekyll-theme-minimal
+theme: minima
 plugins:
   - jekyll-feed
 
