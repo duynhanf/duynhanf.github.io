@@ -1,7 +1,7 @@
 ---
 layout: post
 title: draw.ioを使ってAWSの構成図を作成するコツ
-permalink: /aws/aws04/
+permalink: /aws/tip-su-dung-draw.io-de-ve-so-do-aws/
 tags: aws draw.io tips
 ---
 
