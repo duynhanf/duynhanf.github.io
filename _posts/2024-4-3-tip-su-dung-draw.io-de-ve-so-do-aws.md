@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Những típ vẽ sơ đồ AWS bằng draw.io
+title: Những tips vẽ sơ đồ AWS bằng draw.io
 permalink: /aws/tip-su-dung-draw.io-de-ve-so-do-aws/
 tags: aws draw.io tips
 ---
