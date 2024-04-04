@@ -4,91 +4,87 @@ title: Migration từ EC2(MySQL) sang Aurora MySQL
 permalink: /aws/migration-ec2-mysql-sang-aurora-mysql/
 tags: aws ec2 aurora mysql
 ---
-<h2>最初に</h2>
-> みなさんは Amazon OpenSearch Service を利用していますか？
-
+<h2>Mở đầu</h2>
 Mọi người đã thử sử dụng Amazon OpenSearch Service chưa?
 
-最近業務でOpenSearchの設定変更を行いました。
-その時にデプロイ方式について気になる点があったので、それぞれの違いについて調査したことを検証結果も含めてまとめました。
-ぜひご覧ください！
+Trong những công việc gần đây, tôi đã được tham gia vào việc đổi cấu hình của OpenSearch.
+Vào lúc đó, tôi đã quan tâm đến cách thức triển khai, và tôi đã tổng hợp kết quả nghiên cứu của mình về sự khác biệt giữa chúng, bao gồm cả kết quả thử nghiệm.
+Nhất định xem qua nhé!
 
-<h2>Amazon OpenSearch Service とは</h2>
+<h2>Amazon OpenSearch Service là gì?</h2>
 
-最初にざっくりとAmazon OpenSearch Serviceについて紹介します。
-AWSが提供するマネージドサービスであり、リアルタイムのアプリケーションモニタリング、ログ分析、ウェブサイト検索などの幅広いデータの分析を専用のダッシュボードを用いて簡単に行うことができます。
 
-もともとAWSではElasticSearchのソースコードをもとにしたサービスをマネージドで提供していましたが、2021年からAWS独自のサービスとしてAmazon OpenSearch Serviceが生み出されました。
-なのでElasticSearchに似通った部分が多分にあるサービスとなっています。
+Tôi sẽ giới thiệu về Amazon OpenSearch Service một cách tổng quan.
+Nó là một dịch vụ quản lý được cung cấp bởi AWS, cho phép bạn dễ dàng thực hiện phân tích dữ liệu rộng lớn như giám sát ứng dụng thời gian thực, phân tích log, tìm kiếm trên trang web, v.v. bằng cách sử dụng dashboard chuyên dụng.
 
-<h2>デプロイ方法について</h2>
-<h3>デプロイの種類</h3>
-OpenSearchのデプロイ方法は大きく2つに分かれます。
+Ban đầu, AWS cung cấp dịch vụ dựa trên mã nguồn của ElasticSearch, nhưng từ năm 2021, dịch vụ Amazon OpenSearch Service được tạo ra như một dịch vụ riêng của AWS. Vì vậy, dịch vụ này có nhiều điểm tương đồng với ElasticSearch.
 
-　1. Blue/Greenデプロイ
-　2. Blue/Greenデプロイなしのデプロイ
+<h2>Về cách triển khai</h2>
+<h3>Các loại triển khai</h3>
+Cụ thể, cách triển khai của OpenSearch được chia thành 2 loại chính.
 
-1.のBlue/Greenデプロイは実行されると新環境が作成され、更新が完了後に新環境に切り替えられます。
-2.に関しては残念ながら詳細なデプロイ方法は公開されておりません。
-（個人的にはノードごとにローリングデプロイされているのだろうと推測しています）
+1. Blue/Green deploy
+2. Triển khai không có Blue/Green deploy
 
-どちらのデプロイ方法が適用されるのかについてはOpenSearchの内部ロジックにより決定されるため、ユーザ側で選択はできません。
-しかし、ドライランを行うことで実施する設定変更に対するデプロイ方法を事前に確認することができます。
+Về cách triển khai Blue/Green, khi deploy được tiến hành, một môi trường mới được tạo ra và sau khi cập nhật hoàn tất, hệ thống sẽ chuyển sang môi trường mới.
 
-Blue/Greenデプロイが発生する条件
-とはいえ、AWSからBlue/Greenデプロイが発生する大体の条件は公開されています。
+Về cách 2, không có cách triển khai chi tiết được công bố.
+(Tôi đoán rằng nó sẽ được triển khai theo kiểu rolling deploy cho từng node)
 
-しかしBlue/Greenデプロイが発生する条件に引っかかっていなかったとしても、Blue/Green発生しないことを保証するわけではありません。
-変更前にドライランを実施して確認することが大切です。
+Về cách triển khai nào sẽ được áp dụng, điều này sẽ được quyết định bởi logic bên trong của OpenSearch, vì vậy người dùng không thể chọn lựa. 
+Tuy nhiên, bằng việc chạy dry-run, chúng ta có thể confirm trước xem là phương pháp deploy nào sẽ được dùng đối với config
 
+Điều kiện để deploy Blue/Green
+
+Nói thế thì, điều kiện lớn khi Blue/Green deploy được chạy thì được AWS công khai trên docs.
+Tuy nhiên, dù không đủ điều kiện để chạy Blue/Green thì cũng không đảm bảo rằng sẽ không chạy Blue/Green. Do đó, trước khi deploy, việc confirm bằng dry-run là rất quan trọng
 
 通常は Blue/Green デプロイの原因となる変更
-
-インスタンスタイプを変更する
-きめ細かなアクセスコントロールの有効化
-サービスソフトウェアのアップデートを行う
-ドメインに専用マスターノードがない場合に、データインスタンス数を変更する
-専用マスターノードを有効または無効にする
-スタンバイなしのマルチ AZ を有効または無効にする
-ストレージタイプ、ボリュームタイプ、ボリュームサイズを変更する　※詳細は下記アップデート情報を参照
-別の VPC のサブネットを選択する
-VPC セキュリティグループを追加または削除する
-OpenSearch Dashboards の Amazon Cognito 認証の有効化または無効化
-別の Amazon Cognito ユーザープールまたは ID プールを選択する
-アドバンスト設定を変更する
-新しい OpenSearch バージョンへのアップグレード
-保管中のデータの暗号化または node-to-node 暗号化の有効化
-UltraWarm またはコールドストレージの有効化または無効化
-Auto-Tune を無効にし、変更をロールバックする
-ドメインへのオプションプラグインの関連付けとドメインからのオプションプラグインの関連付けの解除
-専用マスターノードが 2 つあり、ゾーン認識が有効になっているドメインの専用マスターノード数を増やす
+- インスタンスタイプを変更する
+- きめ細かなアクセスコントロールの有効化
+- サービスソフトウェアのアップデートを行う
+- ドメインに専用マスターノードがない場合に、データインスタンス数を変更する
+- 専用マスターノードを有効または無効にする
+- スタンバイなしのマルチ AZ を有効または無効にする
+- ストレージタイプ、ボリュームタイプ、ボリュームサイズを変更する　※詳細は下記アップデート情報を参照
+- 別の VPC のサブネットを選択する
+- VPC セキュリティグループを追加または削除する
+- OpenSearch Dashboards の Amazon Cognito 認証の有効化または無効化
+- 別の Amazon Cognito ユーザープールまたは ID プールを選択する
+- アドバンスト設定を変更する
+- 新しい OpenSearch バージョンへのアップグレード
+- 保管中のデータの暗号化または node-to-node 暗号化の有効化
+- UltraWarm またはコールドストレージの有効化または無効化
+- Auto-Tune を無効にし、変更をロールバックする
+- ドメインへのオプションプラグインの関連付けとドメインからのオプションプラグインの関連付けの解除
+- 専用マスターノードが 2 つあり、ゾーン認識が有効になっているドメインの専用マスターノード数を増やす
 
 通常は Blue/Green デプロイが発生しない変更
 
-アクセスポリシーを変更する
-カスタムエンドポイントの変更
-Transport Layer Security (TLS) ポリシーを変更する
-自動スナップショットの時間を変更する
-[HTTPS が必要] を有効または無効にする
-変更内容をロールバックせずに Auto-Tune を有効または無効にする
-ドメインに専用マスターノードがある場合、データノードまたは UltraWarm ノード数を変更する
-ドメインに専用マスターノードがある場合、専用マスターインスタンスタイプまたはノード数を変更する (専用マスターが 2 つあり、ゾーン認識が有効になっているドメインを除く)
-CloudWatchへのエラーログ、監査ログ、またはスローログの発行の有効化または無効化
-ボリュームサイズを 3 TiB まで増やし、ボリュームタイプ、IOPS、スループットを変更する　※詳細は下記アップデート情報を参照
-タグの追加と削除
-Amazon OpenSearch Service での設定変更
+- アクセスポリシーを変更する
+- カスタムエンドポイントの変更
+- Transport Layer Security (TLS) ポリシーを変更する
+- 自動スナップショットの時間を変更する
+- [HTTPS が必要] を有効または無効にする
+- 変更内容をロールバックせずに Auto-Tune を有効または無効にする
+- ドメインに専用マスターノードがある場合、データノードまたは UltraWarm ノード数を変更する
+- ドメインに専用マスターノードがある場合、専用マスターインスタンスタイプまたはノード数を変更する (専用マスターが 2 つあり、ゾーン認識が有効になっているドメインを除く)
+- CloudWatchへのエラーログ、監査ログ、またはスローログの発行の有効化または無効化
+- ボリュームサイズを 3 TiB まで増やし、ボリュームタイプ、IOPS、スループットを変更する　※詳細は下記アップデート情報を参照
+- タグの追加と削除
+- Amazon OpenSearch Service での設定変更
 
 2024/2/14のアップデートでEBSの変更がBlue/Greenデプロイなしで可能になりました！
 詳細は以下です。
 
 ＜前提条件＞
-　・現行世代のインスタンスを使用する OpenSearch Service ドメインであること
-　・データノードあたりのボリュームサイズが 3 TiB 以内であること
+- 現行世代のインスタンスを使用する OpenSearch Service ドメインであること
+- データノードあたりのボリュームサイズが 3 TiB 以内であること
 ＜変更内容＞
-　・ボリュームサイズの拡張
-　・ボリュームタイプの変更
-　・IOPSの変更
-　・スループットの変更
+- ボリュームサイズの拡張
+- ボリュームタイプの変更
+- IOPSの変更
+- スループットの変更
 
 上記については、Blue/Greenデプロイなしで設定変更が可能です。
 Amazon OpenSearch Service でブルー/グリーンデプロイを使用しないクラスターボリュームの更新が可能に
@@ -99,9 +95,10 @@ Blue/Greenデプロイ時は新環境と旧環境が存在するため、ノー�
 また、Blue/Greenデプロイ中においても検索およびインデックス作成リクエストに対応可能です。
 ただし、環境が2つ作成されることによる負荷のため、次のようなパフォーマンスの問題が発生する可能性があります。
 
-リーダーノードの使用量が一時的に増加
-検索とインデックス作成のレイテンシーが増加
-クラスターの負荷が増加による、受信リクエストの拒否の増加
+- リーダーノードの使用量が一時的に増加
+- 検索とインデックス作成のレイテンシーが増加
+- クラスターの負荷が増加による、受信リクエストの拒否の増加
+
 パフォーマンスの低下を避けるため、Blue/Greenデプロイはクラスターが健全かつ、ネットワークトラフィックが低い状態で実行することが推奨されています。
 
 さらに、新環境にルーティングを切り替えるさいに瞬断が発生する可能性がある点にも注意が必要です。
@@ -117,8 +114,9 @@ Blue/Greenデプロイなしのデプロイの方がおすすめです。
 作業時間が短い
 基本的にBlue/Greenデプロイありでもなしでも、下記は対応されています。
 
-設定変更中においても検索およびインデックス作成リクエストに対応可能
-設定変更によるドキュメントの欠損はない（※開発環境での検証は必要）
+- 設定変更中においても検索およびインデックス作成リクエストに対応可能
+- 設定変更によるドキュメントの欠損はない（※開発環境での検証は必要）
+
 しかし、上記で述べたようにBlue/Greenデプロイは新環境と旧環境の2つ環境が高くなるため、一時的な負荷が高くなってしまいます。
 それに比べてBlue/Greenデプロイなしの場合はOpenSearchの負荷状況を大きく気にする必要はありません。（もちろんピーク時に実行は避けた方がよいですが）
 また後述の検証でも言及しますが、Blue/Greenデプロイは新環境の作成と、それによるデータ（シャード）のコピーが必要なため設定変更に時間がかかります。
@@ -131,11 +129,11 @@ Amazon OpenSearch Service の開始方法
 
 今回検証のために作成したOpenSearchの設定値は以下です。
 
-マスターノード
+- マスターノード
 台数：3台
 インスタンスタイプ：m6g.large.search
 
-データノード
+- データノード
 台数：3台
 インスタンスタイプ：r5.large.search
 ボリュームタイプ：gp2
